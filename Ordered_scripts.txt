@@ -1,0 +1,242 @@
+#1. Decompress files unzip files
+	gzip -d *.fastq.gz
+
+
+#2. assess the quality of raw reads
+	ml fastqc
+	fastqc *.fastq* 
+
+
+#3. Create "names_of_accessions.txt" which is a txt file that conteins the name of each sequence (fastaq) per line like that:
+	A_S1
+	B_S2
+	C_S3
+	D_S4
+	E_S5
+	F_S6
+
+#Create "names_raw_seq_forward.txt" which is a txt file that conteins the name of each FORWARD sequence (fastq) per line
+	ls *_R1_001.fastq > names_raw_seq_forward.txt
+
+#Create "names_raw_seq_reverse.txt" which is a txt file that conteins the name of each REVERSE sequence (fastq) per line
+	ls *_R2_001.fastq > names_raw_seq_reverse.txt
+
+
+#4. Create new directory for adapter free sequences (change path according to your needs)
+	mkdir /blue/plp6905/jacoborobledobur/Tony/2_adapter_free_seq
+
+
+#5. Remove adapters
+	ml adapterremoval
+	num_lines=$(wc -l names_of_accessions.txt | awk '{print $1}')
+	for i in $(seq 1 $num_lines)
+		do
+    			R1=$(awk "NR==$i" names_raw_seq_forward.txt) 
+    			R2=$(awk "NR==$i" names_raw_seq_reverse.txt) 
+    			R3=$(awk "NR==$i" names_of_accessions.txt | tr -d '\r') 
+    			AdapterRemoval --file1 $R1 --file2 $R2 --basename "/blue/plp6905/jacoborobledobur/Project/2_Adaptor_free_sequences/adaptor_free_$R3"     
+		done
+
+
+#6. Check quality of adpter free reads
+	ml fastqc
+	#assess the quality, change the directory to your directory containing the adapter free sequences
+	cd /blue/plp6905/jacoborobledobur/Tony/2_adapter_free_seq/
+	fastqc *pair*.truncated
+
+
+#7. Align rRNA and remove from truncated sequences (sequences with no adaptors)
+	#change directory where you have the truncated (adapter free) sequences
+	cd /blue/plp6905/jacoborobledobur/Tony/2_adapter_free_seq
+	# list the adapter free files (FORWARD) in a txt file. One line per file. Change the paths as needed
+		ls *pair1.truncated > names_adaptor_free_fwd.txt
+	# list the adapter free files (REVERSE) in a txt file. One line per file. Change the paths as needed
+		ls *pair2.truncated > names_adaptor_free_rev.txt
+	#MAKE SURE THE SORTMERNA FILE IS SET APPROPROATELY AS DESCRIBED IN THE MANUAL
+	ml sortmerna
+	num_lines=$(wc -l /blue/plp6905/jacoborobledobur/Tony/1_Raw_reads/names_of_accessions.txt | awk '{print $1}')
+	for i in $(seq 1 $num_lines)
+	do
+	rm -f /blue/plp6905/jacoborobledobur/Project/sortmerna/kvdb/*
+	R1=$(awk "NR==$i" names_adaptor_free_fwd.txt) 
+	R2=$(awk "NR==$i" names_adaptor_free_rev.txt)
+	R3=$(awk "NR==$i" /blue/plp6905/jacoborobledobur/Tony/1_Raw_reads/names_of_accessions.txt | tr -d '\r') 
+	sortmerna --ref /blue/plp6905/jacoborobledobur/Project/rRNA_databases/rfam-5.8s-database-id98.fasta --ref 	/blue/plp6905/jacoborobledobur/Project/rRNA_databases/rfam-5s-database-	id98.fasta --ref /blue/plp6905/jacoborobledobur/Project/rRNA_databases/silva-	arc-16s-id95.fasta --ref /blue/plp6905/jacoborobledobur/Project/rRNA_databases/silva-arc-23s-	id98.fasta --ref 	/blue/plp6905/jacoborobledobur/Project/rRNA_databases/silva-bac-16s-id90.fasta --ref /blue/plp6905/jacoborobledobur/Project/rRNA_databases/silva-	bac-23s-	id98.fasta --ref /blue/plp6905/jacoborobledobur/Project/rRNA_databases/silva-euk-18s-id95.fasta --ref 	/blue/plp6905/jacoborobledobur/Project/rRNA_databases/silva-euk-28s-	id98.fasta --reads $R1 --reads $R2 --fastx --paired_out --aligned "./alidned_$R3" --	out2 --other "/blue/plp6905/jacoborobledobur/Tony/3_rRNA_free_seq/sortmerna_$R3" --workdir 	/blue/plp6905/jacoborobledobur/Project/sortmerna/
+	done
+
+
+#8. Trim reads-->  
+#Make a txt file with the rRNA free sequences (forward)
+	ls *fwd* > names_rrna_and_adaptor_free_sequences_fwd.txt
+#Make a txt file with the rRNA free sequences (reverse)
+	ls *rev* > names_rrna_and_adaptor_free_sequences_rev.txt
+#trim:To discard low-quality sequences with a quality score below 20, reads that are shorter than 17 nucleotides in paired reads using Trimmomatic, you can use the following command:
+	
+	ml trimmomatic
+	num_lines=$(wc -l /blue/plp6905/jacoborobledobur/Tony/1_Raw_reads/names_of_accessions.txt | awk '{print $1}')
+	for i in $(seq 1 $num_lines)
+	do
+	R1=$(awk "NR==$i" names_rrna_and_adaptor_free_sequences_fwd.txt) 
+	R2=$(awk "NR==$i" names_rrna_and_adaptor_free_sequences_rev.txt)
+	R3=$(awk "NR==$i" /blue/plp6905/jacoborobledobur/Tony/1_Raw_reads/names_of_accessions.txt | tr -d '\r') 
+	trimmomatic PE -phred33 $R1 $R2 "/blue/plp6905/jacoborobledobur/Tony/4_trimmed_rRNA_sequences/trimmed_forward_paired_$R3.fastq" 	"trimmed_forward_unpaired_$R3.fastq" 	"/blue/plp6905/jacoborobledobur/Tony/4_trimmed_rRNA_sequences/trimmed_reverse_paired_$R3.fastq" 	"trimmed_reverse_unpaired_$R3.fastq" LEADING:20 TRAILING:20 SLIDINGWINDOW:4:20 	MINLEN:17
+	done
+
+
+#9. assess the quality of trimmed and adapter free reads
+	ml fastqc
+	cd /blue/plp6905/jacoborobledobur/Tony/4_trimmed_rRNA_sequences/
+	fastqc *.fastq* 
+
+
+#10. align to reference genome
+	# Create a txt file with the trimmed adapter free sequences
+		ls /blue/plp6905/jacoborobledobur/Tony/4_trimmed_rRNA_sequences/*forward*.fastq > name_of_clean_samples_fwd.txt
+	# Create a txt file with the trimmed adapter free sequences
+		ls /blue/plp6905/jacoborobledobur/Tony/4_trimmed_rRNA_sequences/*forward*.fastq > name_of_clean_samples_fwd.txt
+	#Index the genomes with HIsat
+	# D.citri
+		hisat2-build /blue/plp6905/jacoborobledobur/Tony/Reference/GCF_000475195.1_Diaci_psyllid_genome_assembly_version_1.1_genomic.fna D_citri_hisat_index
+	# Flavi virus
+		hisat2-build /blue/plp6905/jacoborobledobur/Tony/Reference/GCF_001685345.1_ViralProj328030_genomic.fna Flavi_virus_hisat_index
+	#Alignment (Hisat2):
+		ml hisat2
+		num_lines=$(wc -l /blue/plp6905/jacoborobledobur/Tony/1_Raw_reads/names_of_accessions.txt | awk '{print $1}')
+		for i in $(seq 1 $num_lines)
+		do
+    		R1=$(awk "NR==$i" name_of_clean_samples_fwd.txt)
+    		R2=$(awk "NR==$i" name_of_clean_samples_rev.txt) 
+    		R3=$(awk "NR==$i" /blue/plp6905/jacoborobledobur/Tony/1_Raw_reads/names_of_accessions.txt | tr -d '\r') 
+    		hisat2 -x /blue/plp6905/jacoborobledobur/Tony/Reference/D_citri_hisat_index -1 $R1 -2 $R2 --mm -p 8 --al-conc 				"/blue/plp6905/jacoborobledobur/Tony/5_aligned_sequences/D_citri_aligned_concordant_%_$R3.fq" --un-conc "./D_citri_unaligned_concordant_%_$R3.fq" --dta -S 		"/blue/plp6905/jacoborobledobur/Tony/5_aligned_sequences/output_D_citri_$R3.sam"
+    		hisat2 -x /blue/plp6905/jacoborobledobur/Tony/Reference/Flavi_virus_hisat_index -1 $R1 -2 $R2 --mm -p 8 --al-conc "/blue/plp6905/jacoborobledobur/Tony/5		_aligned_sequences/Flavi_aligned_concordant_%_$R3.fq" --un-conc "./Flavi_unaligned_concordant_%_$R3.fq" --dta -S "/blue/plp6905/jacoborobledobur/Tony/5	_aligned_sequences/output_Flavi_$R3.sam"
+		done
+
+
+#11. Convert from SAM to BAM
+	#Get a txt file of the SAM files
+		ls *.sam > list_sam_files.txt
+	#Convert from sam to bam with SAMTOOLS
+		cd /blue/plp6905/jacoborobledobur/Tony/5_aligned_sequences/
+		ml samtools
+		while read sam_file; do
+    		bam_file="${sam_file%.sam}.bam"
+    		samtools view -bS "$sam_file" > "$bam_file"
+		done < list_sam_files.txt
+#11. Order BAM files
+	#Get a txt file of the BAM files
+		ls *.bam > list_bam_files.txt
+	#Order .bam files
+		ml samtools
+		num_lines=$(wc -l list_bam_files.txt | awk '{print $1}')
+		for i in $(seq 1 $num_lines)
+		do
+    		R1=$(awk "NR==$i" list_bam_files.txt)
+    		samtools sort -o "./sorted_$R1" "./$R1"
+		done
+
+#12. sequence to transcripts
+	#Create a file with the sorted files for D_citri
+		ls *sorted*D_citri*> names_D_citri_aligned_samples.txt
+	#Create a file with the sorted files for Flavi
+		ls *sorted*Flavi* > names_Flavi_aligned_samples.txt
+	#For D_citri:
+		ml stringtie
+		num_lines=$(wc -l /blue/plp6905/jacoborobledobur/Tony/1_Raw_reads/names_of_accessions.txt | awk '{print $1}')
+		for i in $(seq 1 $num_lines)
+		do
+    		R1=$(awk "NR==$i" names_D_citri_aligned_samples.txt) 
+    		R2=$(awk "NR==$i" /blue/plp6905/jacoborobledobur/Tony/1_Raw_reads/names_of_accessions.txt) 
+    		stringtie $R1 -l "D_citri_$R2" -p 8 -G /blue/plp6905/jacoborobledobur/Tony/Reference/genomic_D_citri.gff -o  "/blue/plp6905/jacoborobledobur/Tony/6_Transcripts/D_citri_$R2.gtf"
+		done
+	#For Flavi:
+		ml stringtie
+		num_lines=$(wc -l /blue/plp6905/jacoborobledobur/Tony/1_Raw_reads/names_of_accessions.txt | awk '{print $1}')
+		for i in $(seq 1 $num_lines)
+		do
+    		R1=$(awk "NR==$i" names_Flavi_aligned_samples.txt) 
+    		R2=$(awk "NR==$i" /blue/plp6905/jacoborobledobur/Tony/1_Raw_reads/names_of_accessions.txt) 
+    		stringtie $R1 -l "Flavi_$R2" -p 8 -G /blue/plp6905/jacoborobledobur/Tony/Reference/genomic_Virus.gff -o  "/blue/plp6905/jacoborobledobur/Tony/6_Transcripts/Flavi_$R2.gtf"
+		done
+	#Merge GTFs:
+		ls *D_citri*.gtf> merge_D_citri.txt
+		ls *Flavi*.gtf> merge_Flavi.txt
+		ml stringtie
+		stringtie --merge -p 8 -G /blue/plp6905/jacoborobledobur/Tony/Reference/genomic_D_citri.gff -o stringtie_merged_D_Citri.gtf merge_D_citri.txt
+		stringtie --merge -p 8 -G /blue/plp6905/jacoborobledobur/Tony/Reference/genomic_Virus.gff -o stringtie_merged_Flavi.gtf merge_Flavi.txt
+	#Compare GTFs:
+		ml gffcompare
+		gffcompare -r /blue/plp6905/jacoborobledobur/Tony/Reference/genomic_D_citri.gff -G -o merged_D_citri stringtie_merged_D_Citri.gtf
+		gffcompare -r /blue/plp6905/jacoborobledobur/Tony/Reference/genomic_Virus.gff -G -o merged_Flavi stringtie_merged_Flavi.gtf
+	#generate the abundances
+		mkdir /blue/plp6905/jacoborobledobur/Tony/7_D_citri_abundance_BALLGOWN
+		mkdir /blue/plp6905/jacoborobledobur/Tony/7_Flavi_abundance_BALLGOWN
+	#create diectories with the name of the samples in every "abundance_BALLGOWN" folder
+		xargs mkdir < /blue/plp6905/jacoborobledobur/Tony/1_Raw_reads/names_of_accessions.txt
+	#Create file of sorted BAM for D. citri 
+		cd /blue/plp6905/jacoborobledobur/Tony/5_aligned_sequences
+		ls *sorted*D_citri* > /blue/plp6905/jacoborobledobur/Tony/7_D_citri_abundance_BALLGOWN/sorted_BAM_D_citri.txt
+	#Create file of sorted BAM for Flavi
+		ls *sorted*Flavi* > /blue/plp6905/jacoborobledobur/Tony/7_Flavi_abundance_BALLGOWN/sorted_BAM_Flavi.txt
+	#Calculate abundances for D.Citri
+		cd /blue/plp6905/jacoborobledobur/Tony/7_D_citri_abundance_BALLGOWN 
+		ml stringtie
+		num_lines=$(wc -l /blue/plp6905/jacoborobledobur/Tony/1_Raw_reads/names_of_accessions.txt | awk '{print $1}')
+		for i in $(seq 1 $num_lines)
+		do
+   		R2=$(awk "NR==$i" sorted_BAM_D_citri.txt) 
+    		R3=$(awk "NR==$i" /blue/plp6905/jacoborobledobur/Tony/1_Raw_reads/names_of_accessions.txt) 
+    		stringtie -e -B -p 8 -G /blue/plp6905/jacoborobledobur/Tony/6_Transcripts/stringtie_merged_D_Citri.gtf -o "./$R3/D_citri_$R3.gtf" "/blue/plp6905/jacoborobledobur/Tony/5			_aligned_sequences/$R2"
+		done
+	#Calculate abundances for Flavi
+		cd /blue/plp6905/jacoborobledobur/Tony/7_Flavi_abundance_BALLGOWN 
+		ml stringtie
+		num_lines=$(wc -l /blue/plp6905/jacoborobledobur/Tony/1_Raw_reads/names_of_accessions.txt | awk '{print $1}')
+		for i in $(seq 1 $num_lines)
+		do
+   		R2=$(awk "NR==$i" sorted_BAM_Flavi.txt) 
+    		R3=$(awk "NR==$i" /blue/plp6905/jacoborobledobur/Tony/1_Raw_reads/names_of_accessions.txt) 
+    		stringtie -e -B -p 8 -G /blue/plp6905/jacoborobledobur/Tony/6_Transcripts/stringtie_merged_Flavi.gtf -o "./$R3/Flavi_$R3.gtf" "/blue/plp6905/jacoborobledobur/Tony/5				_aligned_sequences/$R2"
+		done
+	#Create the file with the paths to the BALLGOWN directories (D. citri)
+		find /blue/plp6905/jacoborobledobur/Tony/7_D_citri_abundance_BALLGOWN -type d > sample_lst_D_citri.txt
+	#Modify the file like that:
+		A_S1 /blue/plp6905/jacoborobledobur/Tony/7_D_citri_abundance_BALLGOWN/A_S1/D_citri_A_S1.gtf
+		B_S2 /blue/plp6905/jacoborobledobur/Tony/7_D_citri_abundance_BALLGOWN/B_S2/D_citri_B_S2.gtf
+		C_S3 /blue/plp6905/jacoborobledobur/Tony/7_D_citri_abundance_BALLGOWN/C_S3/D_citri_C_S3.gtf
+		D_S4 /blue/plp6905/jacoborobledobur/Tony/7_D_citri_abundance_BALLGOWN/D_S4/D_citri_D_S4.gtf
+		E_S5 /blue/plp6905/jacoborobledobur/Tony/7_D_citri_abundance_BALLGOWN/E_S5/D_citri_E_S5.gtf
+		F_S6 /blue/plp6905/jacoborobledobur/Tony/7_D_citri_abundance_BALLGOWN/F_S6/D_citri_F_S6.gtf
+	#python (paste the script in the directory):
+		ml python
+		python prepDE.py -i sample_lst_D_citri.txt
+	#Create the file with the paths to the BALLGOWN directories (flavi)
+		find /blue/plp6905/jacoborobledobur/Tony/7_D_citri_abundance_BALLGOWN -type d > sample_lst_Flavi.txt
+	#Modify the file like that:
+		A_S1 /blue/plp6905/jacoborobledobur/Tony/7_D_citri_abundance_BALLGOWN/A_S1/Flavi_A_S1.gtf
+		B_S2 /blue/plp6905/jacoborobledobur/Tony/7_D_citri_abundance_BALLGOWN/B_S2/Flavi_B_S2.gtf
+		C_S3 /blue/plp6905/jacoborobledobur/Tony/7_D_citri_abundance_BALLGOWN/C_S3/Flavi_C_S3.gtf
+		D_S4 /blue/plp6905/jacoborobledobur/Tony/7_D_citri_abundance_BALLGOWN/D_S4/Flavi_D_S4.gtf
+		E_S5 /blue/plp6905/jacoborobledobur/Tony/7_D_citri_abundance_BALLGOWN/E_S5/Flavi_E_S5.gtf
+		F_S6 /blue/plp6905/jacoborobledobur/Tony/7_D_citri_abundance_BALLGOWN/F_S6/Flavi_F_S6.gtf
+	#python (paste the script in the directory):
+		ml python
+		python prepDE.py -i sample_lst_Flavi.txt
+
+
+	OUTPUT: 
+
+gene_count_matrix_FLAVI.CSV
+gene_count_matrix_D_CITRI.CSV
+transcript_count_matrix_FLAVI.CSV
+transcript_count_matrix_D_CITRI.CSV
+
+
+#ONLY FOR THE RESULTS OF THE VIRUS: retrive sequences of trasncripts
+ml bedtools
+gffread -T -o merged_Flavi.bed stringtie_merged_Flavi.gtf
+bedtools getfasta -fi /blue/plp6905/jacoborobledobur/Tony/Reference/GCF_001685345.1_ViralProj328030_genomic.fna -bed merged_Flavi.bed -fo merged_Flavi.fa
+
+
+
+#get information of annotated genes in NCBI for D.citri
+	datasets summary gene gene-id --inputfile annotatated_DEGs_genes.txt --as-json-lines| dataformat tsv gene --fields annotation-assembly-accession,chromosomes,common-	name,description,gene-type,synonyms,swissprot-accessions
